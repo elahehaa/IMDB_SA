@@ -1,0 +1,378 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Sentiment Analysis
+
+# In[20]:
+
+
+import re
+import pickle
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+from nltk.stem import WordNetLemmatizer
+from sklearn.svm import LinearSVC
+from sklearn.naive_bayes import BernoulliNB
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics import confusion_matrix, classification_report
+
+
+# In[28]:
+
+
+# train_data = []
+# d= open('/Users/zzafari/Downloads/aclImdb/train/labeledBow.feat',  encoding="utf8")
+# for line in d:
+#     train_data.append(line.strip())
+    
+# test_data = []
+# for line in open('/Users/zzafari/Downloads/aclImdb/train/labeledBow.feat',  encoding="utf8"):
+#     test_data.append(line.strip())
+
+
+# In[40]:
+
+
+df = pd.read_csv('/Users/zzafari/Downloads/IMDB Dataset.csv', encoding="ISO-8859-1")
+df.head()
+#df["review"][3]
+
+
+# distribution positive n negative reviews
+
+# In[41]:
+
+
+ax = df.groupby('sentiment').count().plot(kind='bar', title='Distribution of data', legend=False)
+ax.set_xticklabels(['Negative','Positive'], rotation=0)
+
+review, sentiment = list(df['review']), list(df['sentiment'])
+
+
+# In[42]:
+
+
+stopwordlist = ['a', 'about', 'above', 'after', 'again', 'ain', 'all', 'am', 'an',
+             'and','any','are', 'as', 'at', 'be', 'because', 'been', 'before',
+             'being', 'below', 'between','both', 'by', 'can', 'd', 'did', 'do',
+             'does', 'doing', 'down', 'during', 'each','few', 'for', 'from', 
+             'further', 'had', 'has', 'have', 'having', 'he', 'her', 'here',
+             'hers', 'herself', 'him', 'himself', 'his', 'how', 'i', 'if', 'in',
+             'into','is', 'it', 'its', 'itself', 'just', 'll', 'm', 'ma',
+             'me', 'more', 'most','my', 'myself', 'now', 'o', 'of', 'on', 'once',
+             'only', 'or', 'other', 'our', 'ours','ourselves', 'out', 'own', 're',
+             's', 'same', 'she', "shes", 'should', "shouldve",'so', 'some', 'such',
+             't', 'than', 'that', "thatll", 'the', 'their', 'theirs', 'them',
+             'themselves', 'then', 'there', 'these', 'they', 'this', 'those', 
+             'through', 'to', 'too','under', 'until', 'up', 've', 'very', 'was',
+             'we', 'were', 'what', 'when', 'where','which','while', 'who', 'whom',
+             'why', 'will', 'with', 'won', 'y', 'you', "youd","youll", "youre",
+             "youve", 'your', 'yours', 'yourself', 'yourselves']
+
+emojis = {':)': 'smile', ':-)': 'smile', ';d': 'wink', ':-E': 'vampire', ':(': 'sad', 
+          ':-(': 'sad', ':-<': 'sad', ':P': 'raspberry', ':O': 'surprised',
+          ':-@': 'shocked', ':@': 'shocked',':-$': 'confused', ':\\': 'annoyed', 
+          ':#': 'mute', ':X': 'mute', ':^)': 'smile', ':-&': 'confused', '$_$': 'greedy',
+          '@@': 'eyeroll', ':-!': 'confused', ':-D': 'smile', ':-0': 'yell', 'O.o': 'confused',
+          '<(-_-)>': 'robot', 'd[-_-]b': 'dj', ":'-)": 'sadsmile', ';)': 'wink', 
+          ';-)': 'wink', 'O:-)': 'angel','O*-)': 'angel','(:-D': 'gossip', '=^.^=': 'cat'}
+
+
+# In[43]:
+
+
+def preprocess(reviewdata):
+    processedReview = []
+    
+    # Create Lemmatizer and Stemmer.
+    wordLemm = WordNetLemmatizer()
+    
+    # Defining regex patterns.
+    urlPattern        = r"((http://)[^ ]*|(https://)[^ ]*|( www\.)[^ ]*)"
+    userPattern       = '@[^\s]+'
+    alphaPattern      = "[^a-zA-Z0-9]"
+    sequencePattern   = r"(.)\1\1+"
+    seqReplacePattern = r"\1\1"
+    
+    for text in reviewdata:
+        text = text.lower()
+        
+        # Replace all URls with 'URL'
+        text = re.sub(urlPattern,' URL',text)
+        # Replace all emojis.
+        for emoji in emojis.keys():
+            text = text.replace(emoji, "EMOJI" + emojis[emoji])        
+        # Replace @USERNAME to 'USER'.
+        text = re.sub(userPattern,' USER', text)        
+        # Replace all non alphabets.
+        text = re.sub(alphaPattern, " ", text)
+        # Replace 3 or more consecutive letters by 2 letter.
+        text = re.sub(sequencePattern, seqReplacePattern, text)
+
+
+        textwords = ''
+        for word in text.split():
+            # Checking if the word is a stopword.
+            #if word not in stopwordlist:
+            if len(word)>1:
+                # Lemmatizing the word.
+                word = wordLemm.lemmatize(word)
+                textwords += (word+' ')
+            
+        processedReview.append(textwords)
+        
+    return processedReview
+
+
+# In[25]:
+
+
+import time
+t = time.time()
+processedreview = preprocess(review)
+print(f'Text Preprocessing complete.')
+print(f'Time Taken: {round(time.time()-t)} seconds')
+processedreview[3]
+
+
+# In[33]:
+
+
+# sentiment = np.array(list(map(lambda processedreview: 1 if processedreview=="positive" else 0, sentiment)))
+
+
+# In[21]:
+
+
+data_neg = processedreview[:12500]
+plt.figure(figsize = (10,10))
+wc = WordCloud(max_words = 1000 , width = 1600 , height = 800,
+               collocations=False).generate(" ".join(data_neg))
+plt.imshow(wc)
+
+
+# In[22]:
+
+
+data_pos = processedreview['']
+wc = WordCloud(max_words = 1000 , width = 1600 , height = 800,
+              collocations=False).generate(" ".join(data_pos))
+plt.figure(figsize = (10,10))
+plt.imshow(wc)
+
+
+# In[44]:
+
+
+X_train, X_test, y_train, y_test = train_test_split(processedreview, sentiment,
+                                   test_size = 0.2, random_state = 0)
+
+
+# In[45]:
+
+
+vectoriser = TfidfVectorizer(ngram_range=(1,2), max_features=500000)
+vectoriser.fit(X_train)
+print(f'Vectoriser fitted.')
+print('No. of feature_words: ', len(vectoriser.get_feature_names()))
+
+
+# In[46]:
+
+
+X_train = vectoriser.transform(X_train)
+X_test  = vectoriser.transform(X_test)
+
+
+# In[47]:
+
+
+def model_Evaluate(model):
+    
+    # Predict values for Test dataset
+    y_pred = model.predict(X_test)
+
+    # Print the evaluation metrics for the dataset.
+    print(classification_report(y_test, y_pred))
+    
+    # Compute and plot the Confusion matrix
+    cf_matrix = confusion_matrix(y_test, y_pred)
+
+    categories  = ['Negative','Positive']
+    group_names = ['True Neg','False Pos', 'False Neg','True Pos']
+    group_percentages = ['{0:.2%}'.format(value) for value in cf_matrix.flatten() / np.sum(cf_matrix)]
+
+    labels = [f'{v1}\n{v2}' for v1, v2 in zip(group_names,group_percentages)]
+    labels = np.asarray(labels).reshape(2,2)
+
+    sns.heatmap(cf_matrix, annot = labels, cmap = 'Blues',fmt = '',
+                xticklabels = categories, yticklabels = categories)
+
+    plt.xlabel("Predicted values", fontdict = {'size':14}, labelpad = 10)
+    plt.ylabel("Actual values"   , fontdict = {'size':14}, labelpad = 10)
+    plt.title ("Confusion Matrix", fontdict = {'size':18}, pad = 20)
+
+
+# In[48]:
+
+
+LRmodel = LogisticRegression(C = 2, max_iter = 1000, n_jobs=-1)
+LRmodel.fit(X_train, y_train)
+model_Evaluate(LRmodel)
+
+
+# In[30]:
+
+
+BNBmodel = BernoulliNB(alpha = 2)
+BNBmodel.fit(X_train, y_train)
+model_Evaluate(BNBmodel)
+
+
+# In[31]:
+
+
+SVCmodel = LinearSVC()
+SVCmodel.fit(X_train, y_train)
+model_Evaluate(SVCmodel)
+
+
+# In[ ]:
+
+
+model = Sequential()
+embedding_layer = Embedding(vocab_size, 100, weights=[embedding_matrix], input_length=maxlen , trainable=False)
+model.add(embedding_layer)
+
+model.add(Flatten())
+model.add(Dense(1, activation='sigmoid'))
+
+
+# In[ ]:
+
+
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['acc'])
+
+print(model.summary())
+
+
+# In[ ]:
+
+
+history = model.fit(X_train, y_train, batch_size=128, epochs=6, verbose=1, validation_split=0.2)
+
+
+# In[ ]:
+
+
+score = model.evaluate(X_test, y_test, verbose=1)
+print("Test Score:", score[0])
+print("Test Accuracy:", score[1])
+
+
+# In[ ]:
+
+
+plt.title('model accuracy')
+plt.ylabel('accuracy')
+plt.xlabel('epoch')
+plt.legend(['train','test'], loc='upper left')
+plt.show()
+
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train','test'], loc='upper left')
+plt.show()
+
+
+# In[14]:
+
+
+REPLACE_NO_SPACE = re.compile("[.;:!\'?,\"()\[\]]")
+REPLACE_WITH_SPACE = re.compile("(<br\s*/><br\s*/>)|(\-)|(\/)")
+
+def Cleaning(reviews):
+    reviews = [REPLACE_NO_SPACE.sub("", line.lower()) for line in reviews]
+    reviews = [REPLACE_WITH_SPACE.sub(" ", line) for line in reviews]
+    
+    return reviews
+
+train_data_clean = Cleaning(train_data)
+test_data_clean = Cleaning(test_data)
+
+
+# In[15]:
+
+
+cv = CountVectorizer(binary=True)
+cv.fit(train_data_clean)
+X = cv.transform(train_data_clean)
+X_test = cv.transform(test_data_clean)
+print(X)
+
+
+# In[16]:
+
+
+Lable = [1 if i < 12500 else 0 for i in range(25000)]
+
+X_train, X_val, y_train, y_val = train_test_split(
+    X, Lable, train_size = 0.75
+)
+
+for c in [0.01, 0.05, 0.25, 0.5, 1]:
+    
+    lr = LogisticRegression(C=c)
+    lr.fit(X_train, y_train)
+#     print (" C=%s Accuracy: %s" 
+#            % (c, accuracy_score(y_val, lr.predict(X_val))))
+
+
+# In[18]:
+
+
+final_model = LogisticRegression(C=0.05)
+final_model.fit(X, Lable)
+# print ("Final Accuracy: %s" 
+#        % accuracy_score(Lable, final_model.predict(X_test)))
+print(final_model.predict(X_test))
+model_Evaluate(final_model)
+
+
+# In[ ]:
+
+
+feature_to_coef = {
+    word: coef for word, coef in zip(
+        cv.get_feature_names(), final_model.coef_[0]
+    )
+}
+for best_positive in sorted(
+    feature_to_coef.items(), 
+    key=lambda x: x[1], 
+    reverse=True)[:5]:
+    print (best_positive)
+    
+
+    
+for best_negative in sorted(
+    feature_to_coef.items(), 
+    key=lambda x: x[1])[:5]:
+    print (best_negative)
+
+
+# In[ ]:
+
+
+
+
